@@ -1,0 +1,26 @@
+{
+  "latex-workshop.latex.outDir": "build",
+  "latex-workshop.latex.root": ".",
+  "latex-workshop.latex.path": "/usr/local/texlive/2026/bin/universal-darwin",
+  "latex-workshop.latex.recipes": [
+    { "name": "latexmk", "tools": ["latexmk"] }
+  ],
+  "latex-workshop.latex.tools": [
+    {
+      "name": "latexmk",
+      "command": "/usr/local/texlive/2026/bin/universal-darwin/latexmk",
+      "args": [
+        "-pdf",
+        "-pdflatex=/usr/local/texlive/2026/bin/universal-darwin/pdflatex %O %S",
+        "-f",
+        "-outdir=build",
+        "-interaction=nonstopmode",
+        "-synctex=1",
+        "%DOC%"
+      ]
+    }
+  ],
+  "latex-workshop.latex.autoBuild.run": "onSave",
+  "latex-workshop.view.pdf.viewer": "tab",
+  "latex-workshop.view.pdf.sideBySide": true
+}

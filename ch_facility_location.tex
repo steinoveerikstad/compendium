@@ -1,0 +1,817 @@
+% ch_facility_location.tex  --  Chapter: Facility location and network design
+% Part of the TMR4115 compendium. Chapter content only; preamble lives in main.tex.
+% Sections 'Single vessel and single charging station' onwards follow
+% Agersborg (NTNU MSc thesis, 2025); figures in fig/ch_facility_location/.
+
+\chapter{Facility location and network design}
+\label{ch:fl}
+
+In recent years, we have seen how the emission reduction problem for shipping has moved from being primarily a single ship problem, to be a fleet-level problem (especially with FuelEU), and now increasingly also including the design and operation of infrastructure such as ports, bunkering facilities and charging stations. For instance, a methanol dual-fuel vessel is of little use if methanol cannot be bunkered in the ports the vessel visits, and a battery-electric vessel is constrained by where, and how fast, it can recharge. Deciding where to place bunkering hubs, shore-power connections and offshore charging stations is therefore a design decision at the level of the transport system. These decisions interact closely with fleet- and vessel-level design and operational decisions. E.g. the fewer and more distant the energy supply points, the larger the tanks or batteries each vessel must carry.
+
+This chapter introduces the \emph{facility location problem} underpinning these decisions. This is basically a network optimisation problem, thus we start with a basic vocabulary for network models. We then build up the classical location models step by step based on a simple example about the placement of green-fuel bunkering hubs in the North Sea. We then look at a problem related to the placement of offshore charging stations for battery-electric short-sea vessels. This latter case is based on a reformulation of the MSc thesis of \citet{Agersborg2025}.
+
+The learning goals of the chapter are:
+\begin{itemize}
+  \item Recognise a location problem in a maritime context.
+  \item Choose between covering, median, center and fixed-charge objectives.
+  \item Formulate the corresponding integer programs.
+  \item Explain why some formulations solve much faster than others.
+  \item Extend the basic models to cases where the facilities serve moving vessels with limited range (i.e. battery-electric vessels).
+\end{itemize}
+
+
+% ---------------------------------------------------------------------
+\section{Networks: a minimal vocabulary}
+\label{sec:fl-networks}
+
+A \emph{network} (or graph) $G=(\mathcal{N},\mathcal{A})$ consists of a set of \emph{nodes} $\mathcal{N}$ and a set of \emph{arcs} $\mathcal{A}\subseteq\mathcal{N}\times\mathcal{N}$ connecting pairs of nodes. In maritime applications, nodes typically represent ports, terminals, offshore installations or waypoints, while arcs represent sailing legs, pipelines or cable connections. An arc $(i,j)$ is \emph{directed} if flow may only pass from $i$ to $j$; an undirected \emph{edge} allows flow in both directions and can always be replaced by two opposing arcs. A connected sequence of arcs is a \emph{path}, and a path that returns to its starting node is a \emph{cycle}. Each arc may carry attributes such as a length $D_{ij}$, a unit cost $c_{ij}$ and a capacity $u_{ij}$.
+
+The quantity we move through a network, whether cargo, vessels or energy, is called \emph{flow}, and we denote the flow on arc $(i,j)$ by $x_{ij}$. Nodes are classified by their net flow: in \emph{supply nodes} (sources) flow enters the network, in \emph{demand nodes} (sinks) flow is leaving or beiing absorbed, while in \emph{transshipment nodes} flow is passed on. The fundamental relation that ties a network model together is \emph{flow conservation},
+\begin{equation}
+  \sum_{j:(i,j)\in\mathcal{A}} x_{ij} \;-\; \sum_{k:(k,i)\in\mathcal{A}} x_{ki} \;=\; b_i
+  \qquad \forall i\in\mathcal{N},
+  \label{eq:fl-flowcons}
+\end{equation}
+where $b_i>0$ for supply nodes, $b_i<0$ for demand nodes and $b_i=0$ for transshipment nodes. Put simply: what leaves a node minus what enters it equals what the node itself produces.
+
+Network optimisation problems fall into two categories \citep{Lundgren2010}. In \emph{network flow problems}, the network is given and the question is how to use it: which route a vessel should take (the shortest path problem), how much can be moved from a source to a sink (the maximum flow problem), or how to distribute supply to demand at minimum cost (the minimum cost flow problem, of which the transportation problem is a special case). In \emph{network design problems}, the network itself is the decision: we select which nodes and arcs to establish, typically at a fixed cost, and then use the resulting network. Facility location is the node-selection variant of network design. This chapter concentrates on design; the efficient use of a given network is the topic of a later chapter.
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}[b]{0.46\textwidth}
+\centering
+\begin{tikzpicture}[>={Stealth[length=2.2mm]}, node distance=1.6cm,
+  nd/.style={circle,draw,minimum size=6mm,inner sep=0pt,font=\small}]
+  \node[nd] (1) {1};
+  \node[nd, above right=0.6cm and 1.3cm of 1] (2) {2};
+  \node[nd, below right=0.6cm and 1.3cm of 1] (3) {3};
+  \node[nd, right=3.2cm of 1] (4) {4};
+  \draw[->] (1) -- node[above left, font=\scriptsize]{$c_{12},u_{12}$} (2);
+  \draw[->] (1) -- node[below left, font=\scriptsize]{$c_{13},u_{13}$} (3);
+  \draw[->] (2) -- (3);
+  \draw[->] (2) -- node[above right, font=\scriptsize]{$c_{24},u_{24}$} (4);
+  \draw[->] (3) -- node[below right, font=\scriptsize]{$c_{34},u_{34}$} (4);
+  \node[left=0.1cm of 1, font=\scriptsize, align=right] {supply\\$b_1>0$};
+  \node[right=0.1cm of 4, font=\scriptsize, align=left] {demand\\$b_4<0$};
+\end{tikzpicture}\\[1mm]
+{\small (a) A network flow problem: the network is given.}
+\end{minipage}\hfill
+\begin{minipage}[b]{0.50\textwidth}
+\centering
+\begin{tikzpicture}[
+  fac/.style={rectangle,draw,minimum size=5.5mm,inner sep=0pt,font=\scriptsize,fill=red!12},
+  cus/.style={circle,draw,minimum size=5.5mm,inner sep=0pt,font=\scriptsize,fill=blue!10}]
+  \foreach \i/\y in {1/1.5,2/0.5,3/-0.5,4/-1.5} {\node[fac] (f\i) at (0,\y) {$\i$};
+     \node[left=0.05cm of f\i, font=\scriptsize] {$f_{\i}$};}
+  \foreach \j/\y in {1/1.8,2/0.9,3/0,4/-0.9,5/-1.8} {\node[cus] (c\j) at (3.2,\y) {$\j$};
+     \node[right=0.05cm of c\j, font=\scriptsize] {$d_{\j}$};}
+  \foreach \i in {1,2,3,4} \foreach \j in {1,2,3,4,5} \draw[gray!45] (f\i) -- (c\j);
+  \draw[thick,blue] (f1) -- (c1); \draw[thick,blue] (f1) -- (c2);
+  \draw[thick,blue] (f3) -- (c3); \draw[thick,blue] (f3) -- (c4); \draw[thick,blue] (f3) -- (c5);
+  \node[font=\scriptsize] at (0,2.25) {sites $i\in\mathcal{I}$};
+  \node[font=\scriptsize] at (3.2,2.45) {customers $j\in\mathcal{J}$};
+  \node[font=\scriptsize] at (1.6,-2.35) {$c_{ij}$ on every arc};
+\end{tikzpicture}\\[1mm]
+{\small (b) A facility location problem: which sites to open?}
+\end{minipage}
+\caption{The two families of network problems. In (b), opening site $i$ costs $f_i$, and customers can only be served from open sites; the bold arcs show one possible design with sites 1 and 3 open.}
+\label{fig:fl-networks}
+\end{figure}
+
+Figure~\ref{fig:fl-networks}(b) shows the structure we will work with throughout the chapter: a bipartite (twosided) network with a set $\mathcal{I}$ of candidate sites on one side and a set $\mathcal{J}$ of customers on the other. If every site were already open, this would be exactly the transportation problem (which is a separate chapter/topic in this course): ship the demand from sites to customers at minimum cost, subject to supply limits. Facility location adds a layer on top, namely a binary decision $y_i$ for each site, and this seemingly small addition turns a linear program into an integer program with a very different character.
+
+
+% ---------------------------------------------------------------------
+\section{The basic structure of a location problem}
+\label{sec:fl-anatomy}
+
+There are four main parts of a location problem: a set of candidate locations, a set of demands to be served, a measure of the cost or distance between them, and finally some measure for what a good configuration is. The way each of these parts is modelled defines the problem class.
+
+\emph{Where can facilities be placed?} In \emph{continuous} location, a facility can be placed anywhere in the plane, as in the classical Weber problem of finding the point that minimises the weighted sum of distances to a set of customers \citep{Weber1909}. In \emph{discrete} location, a finite set of candidate sites is given in advance. Maritime infrastructure is usually discrete: bunkering terminals need suitable quays, water depth and permits, and offshore charging stations must be attached to existing structures such as wind turbines, substations or oil and gas platforms. There are also many interesting examples of continuous location models, say, a mobile "energy replenishment vessel" such as Ulstein Thor. Still, we often choose to model also these, restricting the locations to for instance a set of map grid points. Discrete models are also the natural setting for integer programming, and they will be focus here.
+
+\emph{Where is the demand?} In most classical models demand is attached to nodes: a port consumes a certain volume of fuel per year and must be supplied from some facility. For vessels that must refuel or recharge \emph{during} a voyage, however, demand is a concequence of tactical or operational choices (such as routing/scheduling/vessel speed), and a facility is only useful if it lies within reach of the route. We will look at the node-based view first and the route-based view in Section~\ref{sec:fl-charging}.
+
+\emph{What is a good configuration?} Four sets of objectives are common:
+\begin{itemize}
+  \item \emph{Covering} models require, or reward, that each customer lies within a given service distance of an open facility. Say, locating a fuel station for small boats within 10 nm of cottages with a boat.
+  \item \emph{Median} (minisum) models minimise the total demand-weighted distance or transport cost, and thus express efficiency.
+  \item \emph{Center} (minimax) models minimise the largest distance from any customer to its nearest facility, and thus express equity or worst-case service.
+  \item \emph{Fixed-charge} models let the number of facilities be decided by the model (endogenously) by trading off investment against operating cost. We will later see this in the charging station location problem.
+\end{itemize}
+
+\emph{What other constraints are relevant?} Facilities may have limited capacity, customers may be required to use a single facility (single sourcing) or allowed to split their demand, and the problem may be static or span several periods. Table~\ref{tab:fl-models} summarises the models covered in the following sections.
+
+\begin{table}[htbp]
+\centering
+\caption{The classical discrete location models covered in this chapter.}
+\label{tab:fl-models}
+\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+Model & Objective & Facilities & Reference \\
+\midrule
+Location set covering (LSCP) & min.\ number of facilities & endogenous & \citet{Toregas1971} \\
+Maximal covering (MCLP) & max.\ covered demand & fixed, $p$ & \citet{Church1974} \\
+$p$-median & min.\ weighted distance & fixed, $p$ & \citet{Hakimi1964} \\
+$p$-center & min.\ maximum distance & fixed, $p$ & \citet{Hakimi1964} \\
+Uncapacitated FLP (UFLP) & min.\ fixed + transport & endogenous & \citet{Balinski1965} \\
+Capacitated FLP (CFLP) & min.\ fixed + transport & endogenous & \citet{Daskin2013} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Example: green-fuel bunkering hubs in the North Sea}
+\label{sec:fl-example}
+
+A consortium of fuel suppliers plans a network of bunkering hubs for a zero-carbon fuel, say e-methanol, serving short-sea traffic in the North Sea. Fuel is delivered from each hub by bunker vessel to ten ports that represent the demand, and six of these ports are candidate hub sites. Table~\ref{tab:fl-data} gives the distances, the annual demand $d_j$ at each port, the annualised fixed cost $f_i$ of establishing a hub and the hub throughput capacity $s_i$. Distances are geodesic distances in nautical miles between the port coordinates used by \citet{Agersborg2025}, rounded to whole miles; they underestimate actual sailing distances where land must be rounded. The unit delivery cost is $c=0.04$\,EUR per tonne and nautical mile, so that the annual cost of serving port $j$ from hub $i$ is
+\begin{equation}
+  c_{ij} = c\, d_j\, D_{ji} \qquad \text{[kEUR/yr, with $d_j$ in kt/yr and $D_{ji}$ in nm]}.
+  \label{eq:fl-cij}
+\end{equation}
+Demands, fixed costs, capacities and the unit delivery cost are sample values and should not be used as estimates of an actual market.
+
+\begin{table}[htbp]
+\centering
+\caption{Data for the bunkering hub example. Distances $D_{ji}$ in nautical miles, demand $d_j$ in kt fuel per year, fixed cost $f_i$ in kEUR per year, capacity $s_i$ in kt per year.}
+\label{tab:fl-data}
+\small
+\begin{tabular}{@{}lrrrrrrr@{}}
+\toprule
+ & & \multicolumn{6}{c}{Candidate hub $i$} \\
+\cmidrule(l){3-8}
+Port $j$ & $d_j$ & Bergen & Stavanger & Aberdeen & Esbjerg & Rotterdam & Immingham \\
+\midrule
+Lerwick      &  20 & 194 & 222 & 185 & 417 & 525 & 394 \\
+Kirkwall     &  15 & 265 & 270 & 115 & 427 & 488 & 335 \\
+Aberdeen     &  60 & 302 & 272 &   0 & 365 & 380 & 220 \\
+Newcastle    &  40 & 391 & 336 & 130 & 342 & 273 &  93 \\
+Immingham    &  70 & 444 & 377 & 220 & 321 & 188 &   0 \\
+Rotterdam    & 150 & 510 & 427 & 380 & 262 &   0 & 188 \\
+Esbjerg      &  50 & 312 & 229 & 365 &   0 & 262 & 321 \\
+Kristiansand &  30 & 158 &  87 & 331 & 162 & 396 & 387 \\
+Stavanger    &  50 &  86 &   0 & 272 & 229 & 427 & 377 \\
+Bergen       &  60 &   0 &  86 & 302 & 312 & 510 & 444 \\
+\midrule
+Fixed cost $f_i$ & & 800 & 800 & 600 & 700 & 1000 & 700 \\
+Capacity $s_i$   & & 200 & 200 & 200 & 200 &  200 & 200 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Total demand is 545\,kt per year, of which Rotterdam alone accounts for more than a quarter. We will now solve the same instance with six different models. Figure~\ref{fig:fl-hubs} at the end of Section~\ref{sec:fl-fixed} shows all six solutions side by side, and it is worth returning to it as each model is introduced.
+
+
+% ---------------------------------------------------------------------
+\section{Covering models}
+\label{sec:fl-covering}
+
+Suppose that a bunker vessel can serve a port only if the port lies within a service radius $R$ of the hub, for instance because of the range of the bunker vessel or a contractual delivery-time guarantee. We can define the coverage parameter as
+\begin{equation*}
+  a_{ij} =
+  \begin{cases}
+    1 & \text{if } D_{ji}\le R,\\
+    0 & \text{otherwise,}
+  \end{cases}
+\end{equation*}
+so that $\mathcal{I}_j=\{i\in\mathcal{I}: a_{ij}=1\}$ is the set of sites that can cover customer $j$. Further, with the binary variables $y_i=1$ if a hub is opened at site $i$, the \emph{location set covering problem} (LSCP) finds the smallest number of hubs that covers every port:
+\begin{align}
+  \min\quad & \sum_{i\in\mathcal{I}} y_i \label{eq:fl-lscp-obj}\\
+  \text{s.t.}\quad & \sum_{i\in\mathcal{I}} a_{ij}\, y_i \ge 1 && \forall j\in\mathcal{J}, \label{eq:fl-lscp-cover}\\
+  & y_i\in\{0,1\} && \forall i\in\mathcal{I}. \nonumber
+\end{align}
+Constraint \eqref{eq:fl-lscp-cover} states that at least one open hub must lie within reach of each port. The model contains no costs at all, only a service requirement, and it answers the question ``how much infrastructure is needed to provide full coverage?'' If the sites have different costs, the objective is simply replaced by $\sum_i f_i y_i$.
+
+For our instance with $R=250$\,nm, three hubs are needed. The solver returns Stavanger, Aberdeen and Immingham, but replacing Immingham with Rotterdam gives an equally good solution: covering models frequently have many alternative optima because the objective only counts facilities. Increasing the radius to 300\,nm reduces the requirement to two hubs, while $R=200$\,nm requires four. The minimum number of facilities is a step function of the service standard, and a decision maker can use this relation to judge whether a stricter standard is worth the extra infrastructure.
+
+In practice, the budget is often fixed before the service standard is. The \emph{maximal covering location problem} (MCLP) turns the question around: given $p$ facilities, how much demand can be covered? We introduce an auxiliary variable $u_j=1$ if customer $j$ is covered:
+\begin{align}
+  \max\quad & \sum_{j\in\mathcal{J}} d_j\, u_j \label{eq:fl-mclp-obj}\\
+  \text{s.t.}\quad & u_j \le \sum_{i\in\mathcal{I}} a_{ij}\, y_i && \forall j\in\mathcal{J}, \label{eq:fl-mclp-link}\\
+  & \sum_{i\in\mathcal{I}} y_i = p, \label{eq:fl-mclp-p}\\
+  & y_i\in\{0,1\},\; u_j\in\{0,1\} && \forall i\in\mathcal{I},\ j\in\mathcal{J}. \nonumber
+\end{align}
+Constraint \eqref{eq:fl-mclp-link} allows $u_j=1$ only if at least one covering site is open. With $R=200$\,nm, a single hub at Immingham covers 260\,kt (48\,\% of demand, namely Newcastle, Immingham and Rotterdam). Two hubs, Bergen and Immingham, cover 420\,kt (77\,\%), and three hubs, adding Aberdeen, cover 495\,kt (91\,\%). Each additional hub adds less coverage than the previous one, a pattern of diminishing returns that is typical but, as we will see later, not guaranteed.
+
+Covering models are attractive because the service standard is easy to communicate. Two main weaknesses are that 1) they are "very" binary - a port at 199\,nm counts as fully covered and a port at 201\,nm as not covered at all, and 2) within the range radius the models are indifferent to how far fuel is actually transported.
+
+
+% ---------------------------------------------------------------------
+\section{Median and center models}
+\label{sec:fl-median}
+
+To capture the actual transport effort, we introduce allocation variables $x_{ij}\in[0,1]$, the fraction of customer $j$'s demand served from site $i$. Let the unit cost of transporting one unit of demand from site $i$ to customer $j$ be $c_{ij}$. The \emph{$p$-median problem} locates $p$ facilities so that either the total transportation cost, or equivalently, demand-weighted distance, \eqref{eq:fl-cij}, is minimised:
+\begin{align}
+  \min\quad & \sum_{i\in\mathcal{I}}\sum_{j\in\mathcal{J}} c_{ij}\, d_{j} x_{ij} \label{eq:fl-pmed-obj}\\
+  \text{s.t.}\quad & \sum_{i\in\mathcal{I}} x_{ij} = 1 && \forall j\in\mathcal{J}, \label{eq:fl-assign}\\
+  & x_{ij} \le y_i && \forall i\in\mathcal{I},\ j\in\mathcal{J}, \label{eq:fl-open}\\
+  & \sum_{i\in\mathcal{I}} y_i = p, \label{eq:fl-pmed-p}\\
+  & x_{ij}\ge 0,\; y_i\in\{0,1\} && \forall i\in\mathcal{I},\ j\in\mathcal{J}. \nonumber
+\end{align}
+Constraint \eqref{eq:fl-assign} ensures that all demand is served, and \eqref{eq:fl-open} ensures that it is only served from open sites. Notice that $x_{ij}$ can be continuous: with no capacity limits, each customer will automatically be served entirely from its nearest open facility, since splitting demand can never reduce cost. The name comes from the one-dimensional case, where the optimal single facility location on a line is the (weighted) median of the customer locations.
+
+For the case here, the 1-median is Immingham with an annual transport cost of 5\,247\,kEUR. The 2-median is Stavanger and Rotterdam (2\,724\,kEUR), and the 3-median adds Aberdeen (1\,720\,kEUR). Make a note that Immingham, the best single location, is not part of the best pair. Optimal solutions for different $p$ need not be \emph{nested}, and this has a practical consequence if we want to develop a service step-by-step. If we simply start with the best single site and then adds sites one at a time will generally not end up in the best configuration. We will see this again in the charging case.
+
+The median objective rewards serving large demands well, and may leave small, remote customers far from any facility. The \emph{$p$-center problem} instead minimises the worst-case distance $L$ to the nearest facility:
+\begin{align}
+  \min\quad & L \label{eq:fl-pcen-obj}\\
+  \text{s.t.}\quad & \sum_{i\in\mathcal{I}} D_{ji}\, x_{ij} \le L && \forall j\in\mathcal{J}, \label{eq:fl-pcen-L}\\
+  & \eqref{eq:fl-assign}, \eqref{eq:fl-open}, \eqref{eq:fl-pmed-p}, \quad x_{ij}\in\{0,1\}. \nonumber
+\end{align}
+The auxiliary variable $L$ is a standard linearisation of a $\min\max$ objective: minimising a variable that is forced to be at least as large as every term is equivalent to minimising the largest term. Here $x_{ij}$ must be binary, since a fractional assignment would let \eqref{eq:fl-pcen-L} average distances rather than select one. The 2-center for our instance is Stavanger and Immingham, with a maximum distance of 270\,nm (Kirkwall to Stavanger).
+
+Table~\ref{tab:fl-compare} evaluates the three candidate pairs that are optimal under the three different criteria. Each pair wins on its own criterion and loses on at least one other. None of them is ``the'' optimal pair of hubs; the choice of objective \emph{is} a design decision, and it should reflect what the infrastructure is meant to achieve: low total supply cost, a guaranteed maximum delivery distance, or high coverage within a service standard.
+
+\begin{table}[htbp]
+\centering
+\caption{Three pairs of hubs evaluated under three criteria. Bold entries mark the optimum for each criterion.}
+\label{tab:fl-compare}
+\small
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Hubs & Transport cost & Max.\ distance & Demand within 200\,nm \\
+ & [kEUR/yr] & [nm] & [kt/yr] \\
+\midrule
+Stavanger, Rotterdam & \textbf{2\,724} & 273 & 360 \\
+Stavanger, Immingham & 2\,913 & \textbf{270} & 400 \\
+Bergen, Immingham    & 3\,105 & 312 & \textbf{420} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% ---------------------------------------------------------------------
+\section{Fixed-charge models}
+\label{sec:fl-fixed}
+
+In the models so far, the number of facilities was either the objective (LSCP) or a given parameter $p$. In most investment decisions the number of facilities is itself something to be decided by weighing investment cost against operating cost. The \emph{uncapacitated facility location problem} (UFLP) does this by adding the fixed cost of each open site to the transport cost:
+\begin{align}
+  \min\quad & \sum_{i\in\mathcal{I}} f_i\, y_i + \sum_{i\in\mathcal{I}}\sum_{j\in\mathcal{J}} c_{ij}\, x_{ij} \label{eq:fl-uflp-obj}\\
+  \text{s.t.}\quad & \eqref{eq:fl-assign},\ \eqref{eq:fl-open}, \quad x_{ij}\ge 0,\; y_i\in\{0,1\}. \nonumber
+\end{align}
+The UFLP is the $p$-median problem with the cardinality constraint \eqref{eq:fl-pmed-p} replaced by a price on each facility. Opening one more hub is worthwhile only if the reduction in transport cost exceeds its fixed cost.
+
+The optimal solution opens Stavanger, Aberdeen and Rotterdam at a total cost of 4\,120\,kEUR per year, of which 2\,400 is fixed cost and 1\,720 transport cost. This is the 3-median configuration found earlier, so in this instance the fixed costs select $p=3$ as the right number of hubs. Stavanger serves the Norwegian and Danish ports (190\,kt), Aberdeen serves the UK ports north of the Humber (135\,kt), and Rotterdam serves itself and Immingham (220\,kt). The solution is sensitive to the level of fixed costs: halving all $f_i$ makes it optimal to open five hubs, while increasing them by 50\,\% reduces the network to two hubs, Stavanger and Immingham.
+
+The UFLP solution loads the Rotterdam hub with 220\,kt per year. If each hub can handle at most $s_i$ per year, we add the capacity constraint
+\begin{equation}
+  \sum_{j\in\mathcal{J}} d_j\, x_{ij} \le s_i\, y_i \qquad \forall i\in\mathcal{I},
+  \label{eq:fl-cap}
+\end{equation}
+which gives the \emph{capacitated facility location problem} (CFLP). The right-hand side $s_i y_i$ does double duty: it limits the throughput of an open hub and forces the throughput of a closed hub to zero. With $s_i=200$\,kt, the cheapest adjustment keeps the same three hubs and splits Immingham's demand, sending 50\,kt from Rotterdam and 20\,kt from Aberdeen. The total cost increases by only 26\,kEUR to 4\,146\,kEUR, because 20\,kt now travel 220\,nm instead of 188\,nm.
+
+Split deliveries may be operationally unattractive, since each port would have to contract with two suppliers. Requiring \emph{single sourcing}, that is $x_{ij}\in\{0,1\}$, changes the picture. The best single-sourcing assignment to the same three hubs costs 4\,305\,kEUR, and it is now cheaper to open a fourth hub at Immingham, which serves Newcastle and itself. The total cost becomes 4\,235\,kEUR, and the fixed-cost share rises from 58 to 73\,\%. Note that with capacities, the assignment variables are no longer automatically integral, and single sourcing must be enforced explicitly. Figure~\ref{fig:fl-hubs} summarises the six solutions.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{ch_facility_location/fl_hub_solutions.png}
+\caption{Six models, one instance. Red squares are open hubs, circles are ports with area proportional to demand, and lines show assignments. In the covering models (a) and (b), dotted circles show the service radius and open circles are uncovered ports. Straight lines are schematic and do not represent sailing routes.}
+\label{fig:fl-hubs}
+\end{figure}
+
+
+% ---------------------------------------------------------------------
+\section{Formulation strength (not compulsory reading)}
+\label{sec:fl-strength}
+
+The UFLP can be written in a second way. Constraint \eqref{eq:fl-open} contains one inequality for every site--customer pair, $|\mathcal{I}|\times|\mathcal{J}|=60$ constraints in our instance. It is tempting to aggregate them into one constraint per site,
+\begin{equation}
+  \sum_{j\in\mathcal{J}} x_{ij} \le |\mathcal{J}|\, y_i \qquad \forall i\in\mathcal{I},
+  \label{eq:fl-weak}
+\end{equation}
+which is also valid: if $y_i=0$ no customer can be served from $i$, and if $y_i=1$ the constraint is redundant. Both formulations have exactly the same integer solutions, and the aggregated version needs only six constraints. Which one is better?
+
+Recall from the chapter on integer programming that branch-and-bound relies on the linear programming (LP) relaxation to provide bounds. A formulation is \emph{stronger} than another if its LP relaxation is tighter, that is, closer to the convex hull of the integer solutions. Relaxing $y_i\in\{0,1\}$ to $0\le y_i\le 1$ in our instance gives the following results. With the disaggregated constraints \eqref{eq:fl-open}, the LP relaxation returns $4\,120$\,kEUR with all $y_i$ integral, so the integer optimum is found without any branching. With the aggregated constraints \eqref{eq:fl-weak}, the LP relaxation returns only $1\,200$\,kEUR. Here the LP opens a fraction $y_i=\tfrac{1}{10}\sum_j x_{ij}$ of every site and pays correspondingly little in fixed costs; each hub site serves itself at zero distance, and the remaining ports are served from their nearest site. The resulting gap of 71\,\% must be closed by branching.
+
+The lesson generalises well beyond facility location: fewer constraints does not mean an easier model. A constraint such as $x_{ij}\le y_i$ carries much more information in the LP relaxation than its aggregated counterpart, and for large instances the difference between the two formulations can be the difference between seconds and days of computation. The strong formulation of the UFLP is often attributed to \citet{Balinski1965}; see \citet{Cornuejols1990} for a thorough treatment. The same reasoning applies whenever a ``big-$M$'' constraint links a continuous quantity to a binary decision: $M$ should be as small as the problem allows.
+
+
+% ---------------------------------------------------------------------
+\section{Implementation in Python}
+\label{sec:fl-python}
+
+Listing~\ref{lst:fl-xpress} implements the UFLP and CFLP in Xpress Python. As in earlier chapters, the data are kept in separate files and read with pandas, so that the same model code can be used for other instances. The three runs at the end reproduce the UFLP, the CFLP with split deliveries, and the CFLP with single sourcing.
+
+\begin{lstlisting}[language=Python, caption={UFLP and CFLP in Xpress Python.}, label={lst:fl-xpress}]
+import pandas as pd
+import xpress as xp
+
+# ---- Data --------------------------------------------------------------
+dist  = pd.read_csv("distances.csv", index_col="port")   # D_ji [nm]
+ports = pd.read_csv("ports.csv", index_col="port")        # d_j [kt/yr]
+hubs  = pd.read_csv("hubs.csv", index_col="hub")          # f_i [kEUR/yr], s_i [kt/yr]
+c_unit = 0.04                                             # kEUR per (kt nm)
+
+I, J = list(hubs.index), list(ports.index)
+cost = {(i, j): c_unit * ports.demand[j] * dist.loc[j, i] for i in I for j in J}
+
+def solve_flp(capacitated=False, single_sourcing=False):
+    m = xp.problem("facility_location")
+    y = {i: m.addVariable(vartype=xp.binary, name=f"y_{i}") for i in I}
+    xtype = xp.binary if single_sourcing else xp.continuous
+    x = {(i, j): m.addVariable(lb=0, ub=1, vartype=xtype, name=f"x_{i}_{j}")
+         for i in I for j in J}
+
+    m.setObjective(xp.Sum(hubs.fixed_cost[i] * y[i] for i in I)
+                   + xp.Sum(cost[i, j] * x[i, j] for i in I for j in J),
+                   sense=xp.minimize)
+    m.addConstraint(xp.Sum(x[i, j] for i in I) == 1 for j in J)   # serve all
+    m.addConstraint(x[i, j] <= y[i] for i in I for j in J)        # open to use
+    if capacitated:
+        m.addConstraint(xp.Sum(ports.demand[j] * x[i, j] for j in J)
+                        <= hubs.capacity[i] * y[i] for i in I)
+    m.controls.outputlog = 0
+    m.solve()
+    opened = [i for i in I if m.getSolution(y[i]) > 0.5]
+    return m.attributes.objval, opened, {k: m.getSolution(v) for k, v in x.items()}
+
+for case in [dict(), dict(capacitated=True),
+             dict(capacitated=True, single_sourcing=True)]:
+    z, opened, _ = solve_flp(**case)
+    print(case, round(z, 1), opened)
+\end{lstlisting}
+
+Porting the model to Gurobi requires only the usual substitutions (\texttt{gp.Model}, \texttt{addVar}, \texttt{GRB.BINARY}, \texttt{setObjective}, \texttt{optimize}); the model structure is unchanged.
+
+
+% ---------------------------------------------------------------------
+\section{When the demand travels: offshore charging for battery-electric vessels}
+\label{sec:fl-charging}
+
+Green fuels are definitely among the many emission reducton alternatives that must be part of the solution for maritime decarbonisation. However, there are large intrinsic losses resulting from the conversion of (valuable) green electricity to fuels, and then back again to electricity onboard the vessel.  Figure~\ref{fig:fl-fuel-footprint} shows the illustrative fuel and CO$_2$ footprint for a selection of alternative marine fuels, including battery-electric operation. Thus, if we can store and use the electricty directly, without conversion, this is highly preferable from an overall energy efficiency point-of-view.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=1.00\textwidth]{ch_facility_location/dnv_fuel_co2_footprint.png}
+\caption{Illustrative fuel and CO$_2$ footprint comparison for alternative marine fuels.}
+\label{fig:fl-fuel-footprint}
+\end{figure}
+
+However, the energy density of marine batteries, both by weight and volume, limits the distance a vessel can sail between being recharged, thus excluding routes with long port-to-port distances. One possible solution to this, extending the feasible range of all-electric propulsion, is to locate charging stations offshore. We already have offshore charging stations at wind turbine farms. They are currently installed for the charging SOVs used for wind farm inpection and maintenance, but could with moderate changes in design be repurposed for short sea shipping. Also oil and gas installations have recently been electrified (from the onshore grid). Thus, it is interesting to explore how we could make battery-electric operation feasible on routes that are too long to sail on one charge \citep{Agersborg2025}. Where should such stations be placed?
+
+Two features distinguish this problem from the bunkering hub example. First, demand is not located at nodes. A vessel sailing from Aberdeen to Bergen can manage with a smaller battery if there are one or several charging stations along the route. This is the maritime counterpart of the \emph{flow refuelling location problem}, developed for alternative-fuel stations serving road vehicles with limited range \citep{Hodgson1990, Kuby2005}, where customers are origin--destination flows rather than points. Thus, the infrastructure decision interacts with a vessel design decision. The installed battery capacity $q$ must cover the longest leg between two charging opportunities, and every unit of battery capacity displaces cargo. The location of the stations thus determines the size of the batteries, and the cost of batteries in turn influences where the stations should be.
+
+The problem and model will be developed stepwise (again according to ) \citet{Agersborg2025}). First one vessel and one offshore charging station, then a fleet sharing one station, and finally a fleet with several stations. Candidate sites are the 62 existing and planned offshore wind farms in the North Sea. All parameter values in this section are taken from the illustrative cases of the thesis and are expressed in abstract monetary and energy units.
+
+
+This section presents multiple iterations of the optimization model developed for determining the optimal placement of offshore charging stations. The models are formulated using MILP and aims to minimize total vessel operational costs. Factors such as vessel energy consumption, sailing distance, loss of cargo space due to batteries and time usage is considered. An illustrative case is provided for each iteration to demonstrate its application and validate the model's results.
+
+
+% ---------------------------------------------------------------------
+\subsection{Single vessel and single charging station}
+\label{sec:single-vessel-single-station}
+
+The first iteration of the optimization model simplifies the problem to its most basic form: a single battery-electric vessel traveling between two ports with a mandatory stop at exactly one potential offshore charging station, selected from a predefined set of wind farm locations ($\mathcal{W}$). The primary goal here is to establish the core optimization logic and understand the fundamental trade-offs involved in selecting a single charging station location based on minimizing total voyage costs, considering energy needs and operational factors.
+
+\subsubsection{Model formulation}
+\label{sec:single-formulation}
+
+The model is formulated as a MILP. The sets, parameters, and decision variables used in this first iteration are defined in Table~\ref{tab:single-notation}.
+
+\begin{table}[H]
+\centering
+\caption{Sets, parameters and variables for single vessel and single charging station optimization model.}
+\label{tab:single-notation}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\multicolumn{2}{@{}l}{\textbf{Sets}}\\
+\midrule
+$\mathcal{P}$ & Set of ports (Origin $O$ and destination $D$).\\
+$\mathcal{W}$ & Set of potential wind farm locations.\\
+$\mathcal{N}$ & Set of all nodes, where $\mathcal{N}=\mathcal{P}\cup\mathcal{W}$ (All nodes).\\
+$\mathcal{A}$ & Set of arcs between nodes, where $\mathcal{A}=\{(i,j)\mid i,j\in\mathcal{N},\; i\neq j\}$.\\
+\midrule
+\multicolumn{2}{@{}l}{\textbf{Parameters}}\\
+\midrule
+$C^{S}$      & Sailing cost per nautical mile.\\
+$E^{C}$      & Energy consumption per nautical mile.\\
+$C^{LO}$     & Lost opportunity cost per unit cargo space.\\
+$Q$          & Maximum possible battery capacity.\\
+$C^{E}_{i}$  & Cost per unit of energy at node $i$.\\
+$D_{ij}$     & Geodesic distance between node $i$ and node $j$.\\
+$V$          & Sailing speed.\\
+$C^{T}$      & Time cost per hour.\\
+$R^{C}$      & Charging rate.\\
+$M$          & A large constant, e.g.\ $M=|\mathcal{W}|+2$.\\
+\midrule
+\multicolumn{2}{@{}l}{\textbf{Variables}}\\
+\midrule
+$q\ge 0$             & Installed battery capacity.\\
+$b_{i}\ge 0$         & Battery level when departing node $i$.\\
+$x_{i}\ge 0$         & Amount of energy charged at node $i$.\\
+$y_{i}\in\{0,1\}$    & 1 if recharging occurs at node $i$, 0 otherwise.\\
+$z_{ij}\in\{0,1\}$   & 1 if arc from node $i$ to node $j$ is used, 0 otherwise.\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection*{Objective Function}
+
+The objective function (\ref{eq:obj-single}) aims to minimize the total estimated cost for the single voyage. This cost comprises four key components:
+
+\begin{enumerate}
+\item \textbf{Sailing Cost:} Calculated from the total distance traveled along selected segments and the vessel's cost per nautical mile ($C^{S}$).
+\item \textbf{Energy Cost:} Representing the expense for energy replenishment, determined by the amount charged ($x_{i}$) and the energy price ($C^{E}_{i}$) at visited nodes.
+\item \textbf{Lost Opportunity Cost:} Reflecting the economic impact of dedicating cargo space to the battery system, calculated from the installed battery capacity ($q$) and a cost per unit ($C^{LO}$).
+\item \textbf{Time Cost:} Monetizing the overall duration of the voyage, including both sailing and charging time, multiplied by a time-based cost ($C^{T}$) (e.g., charter rate or equivalent operational time expense).
+\end{enumerate}
+
+While the sailing cost (distance-based) and time cost (duration-based) can sometimes be difficult to separate in real-world operations, they are included as distinct components in this model to offer greater flexibility. This allows for scenarios where one might be emphasized over the other, for instance if only a pure time-based operational cost is relevant, the sailing cost parameter ($C^{S}$) can simply be set to zero, and vice-versa.
+
+\begin{equation}
+\min\;
+\underbrace{\sum_{(i,j)\in\mathcal{A}} z_{ij}\,D_{ij}\,C^{S}}_{\text{Sailing cost}}
+\;+\;
+\underbrace{\sum_{i\in\mathcal{N}} C^{E}_{i}\,x_{i}}_{\text{Energy cost}}
+\;+\;
+\underbrace{q\,C^{LO}}_{\text{Lost-opportunity cost}}
+\;+\;
+\underbrace{C^{T}\left(\sum_{(i,j)\in\mathcal{A}} \frac{D_{ij}}{V}\,z_{ij}
+      \;+\; \sum_{i\in\mathcal{N}} \frac{x_{i}}{R^{C}}\right)}_{\text{Time cost}}
+\label{eq:obj-single}
+\end{equation}
+
+Subject to:
+
+\begin{align}
+&\sum_{\substack{(i,j)\in\mathcal{A}\\ i=O}} z_{ij} = 1 \label{eq:depart-origin}\\[2pt]
+&\sum_{\substack{(i,j)\in\mathcal{A}\\ j=D}} z_{ij} = 1 \label{eq:arrive-dest}\\[2pt]
+&\sum_{\substack{(i,j)\in\mathcal{A}\\ i=u}} z_{ij}
+ \;-\; \sum_{\substack{(k,i)\in\mathcal{A}\\ i=u}} z_{ki} = 0
+ && \forall\, u\in\mathcal{W} \label{eq:flow-cons}\\[2pt]
+&q \le Q \label{eq:cap-max}\\[2pt]
+&b_{i} \le q && \forall\, i\in\mathcal{W} \label{eq:soc-le-q}\\[2pt]
+&b_{O} = q \label{eq:soc-origin}\\[2pt]
+&b_{D} = q \label{eq:soc-dest}\\[2pt]
+&b_{j} \ge b_{i} - E^{C}D_{ij} + x_{j} - M\!\left(1-z_{ij}\right)
+ && \forall\, (i,j)\in\mathcal{A} \label{eq:energy-lo}\\[2pt]
+&b_{j} \le b_{i} - E^{C}D_{ij} + x_{j} + M\!\left(1-z_{ij}\right)
+ && \forall\, (i,j)\in\mathcal{A} \label{eq:energy-hi}\\[2pt]
+&b_{i} \ge E^{C}D_{ij} - M\!\left(1-z_{ij}\right)
+ && \forall\, (i,j)\in\mathcal{A} \label{eq:energy-suff}\\[2pt]
+&\sum_{(k,i)\in\mathcal{A}} z_{ki} = y_{i} && \forall\, i\in\mathcal{W} \label{eq:visit-link}\\[2pt]
+&\sum_{i\in\mathcal{W}} y_{i} = 1 \label{eq:one-station}\\[2pt]
+&z_{ij}\in\{0,1\},\quad y_{i}\in\{0,1\},\quad b_{i}\ge 0,\quad x_{i}\ge 0,\quad q\ge 0
+ \label{eq:domains}
+\end{align}
+
+\subsubsection*{Model Explanation}
+
+The constraints implemented ensure a feasible and logical solution. Route definition constraints (\ref{eq:depart-origin}, \ref{eq:arrive-dest}) ensure the vessel departs the origin $O$ and arrives at the destination $D$ exactly once. Flow conservation through constraints (\ref{eq:flow-cons}) mandates that if the vessel visits a wind farm node ($u\in\mathcal{W}$), it must also depart from it, maintaining route continuity and preventing the voyage from ending prematurely at a charging location.
+
+Energy management is governed by constraints (\ref{eq:cap-max}) through (\ref{eq:energy-suff}). These limit the installed battery capacity $q$ to a maximum $Q$, ensure the battery state $b_{i}$ upon departure never exceeds installed battery capacity $q$, set the battery state at the origin and destination to full capacity, and manage the energy balance between nodes using the ''big-M'' method to account for consumption and charging only on utilized arcs ($z_{ij}=1$). Constraint (\ref{eq:energy-suff}) ensures sufficient energy to reach the next selected node. Charging station assignment is handled by (\ref{eq:visit-link}) and (\ref{eq:one-station}), which link the selection of a node $i$ as the charging station ($y_{i}=1$) to the vessel actually visiting it, while ensuring exactly one wind farm location is chosen overall. Finally, constraint (\ref{eq:domains}) defines the nature of the decision variables (binary, continuous, non-negative).
+
+\subsubsection{Illustrative case}
+\label{sec:single-case}
+
+To demonstrate the model's application, the route between Aberdeen and Bergen is chosen as a representative North Sea short-sea shipping route (port details in Table~\ref{tab:single-ports}). Two cost scenarios are analyzed to assess the model's behavior under the parameter values detailed in Table~\ref{tab:single-params}. Scenario 1 has a high lost opportunity cost ($C^{LO}=100$) relative to sailing cost ($C^{S}=10$), while Scenario 2 has a lower lost opportunity cost ($C^{LO}=50$) and higher sailing cost ($C^{S}=20$). All other parameters remain constant between the scenarios.
+
+\begin{table}[H]
+\centering
+\caption{Set of ports for single vessel illustrative case. Coordinates retrieved from (MagicPort 2025)}
+\label{tab:single-ports}
+\begin{tabular}{@{}llrr@{}}
+\toprule
+Port city & Unlocode & Lat & Long \\
+\midrule
+Aberdeen & GBABD & 57.14 & $-2.08$ \\
+Bergen   & NOBGO & 60.39 & 5.32 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Parameters for single vessel illustrative case.}
+\label{tab:single-params}
+\begin{tabular}{@{}lccl@{}}
+\toprule
+Parameter & Scenario 1 & Scenario 2 & Unit \\
+\midrule
+$O$          & ABD  & BGO  & -- \\
+$D$          & BGO  & ABD  & -- \\
+$C^{S}$      & 10   & 20   & per nm \\
+$E^{C}$      & 0.2  & 0.2  & per nm \\
+$C^{LO}$     & 100  & 50   & per unit cargo space lost \\
+$Q$          & 1000 & 1000 & units of cargo space \\
+$C^{E}_{w}$  & 10   & 10   & per unit energy \\
+$C^{E}_{p}$  & 5    & 5    & per unit energy \\
+$V$          & 15   & 15   & knots \\
+$C^{T}$      & 0    & 0    & cost per hour \\
+$R^{C}$      & 2    & 2    & units per hour \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection*{Model output}
+
+The optimization yields different optimal charging station locations for the two scenarios. Sørvest A is selected for Scenario 1, while Vestavind E is chosen for Scenario 2. The detailed results in Table~\ref{tab:single-results} show that Scenario 1, with its high penalty for battery size, results in a smaller required battery capacity (37.6 units) but necessitates a longer route (345 nm, 114\% of direct distance) via the more centrally located Sørvest A. Scenario 2, prioritizing shorter sailing distance due to its higher cost, justifies installing a larger battery (44.7 units) to enable a more direct route (311 nm, 103\% of direct) by choosing Vestavind E. Figure~\ref{fig:single-routes} illustrates the routes chosen as the optimal solution for the two scenarios, and Figure~\ref{fig:single-soc} illustrates the corresponding battery SOC profiles.
+
+\begin{table}[H]
+\centering
+\caption{Results for Scenario 1 and Scenario 2}
+\label{tab:single-results}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+ & \textbf{Scenario 1} & \textbf{Scenario 2} \\
+\midrule
+Route                            & GBABD $\rightarrow$ NOBGO & GBABD $\rightarrow$ NOBGO \\
+Charging station                 & Sørvest A   & Vestavind E \\
+\textbf{Vessel-specific cost}    & \textbf{7703} & \textbf{8848} \\
+\quad -- Sailing cost            & 3448 & 6213 \\
+\quad -- Lost opportunity cost   & 3752 & 2237 \\
+\quad -- Energy cost             & 502  & 398  \\
+\quad -- Time cost               & 0    & 0    \\
+\textbf{Total time in hours}     & \textbf{57.5} & \textbf{51.8} \\
+\quad -- Sailing                 & 23.0 & 20.7 \\
+\quad -- Charging in port        & 18.8 & 22.4 \\
+\quad -- Charging offshore       & 15.7 & 8.7  \\
+Installed battery capacity $q_{v}$ & 37.6 & 44.7 \\
+Total distance in nm             & 345  & 311  \\
+\% of direct distance            & 114\% & 103\% \\
+Longest segment in nm            & 188  & 224  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{minipage}[b]{0.48\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{ch_facility_location/fig4_1a_route_scenario1.png}
+  \par\smallskip{\small (a) Sailing route Scenario 1.}
+\end{minipage}\hfill
+\begin{minipage}[b]{0.48\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{ch_facility_location/fig4_1b_route_scenario2.png}
+  \par\smallskip{\small (b) Sailing route Scenario 2.}
+\end{minipage}
+\caption{Sailing routes.}
+\label{fig:single-routes}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\begin{minipage}[b]{0.48\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{ch_facility_location/fig4_2a_soc_scenario1.png}
+  \par\smallskip{\small (a) Scenario 1.}
+\end{minipage}\hfill
+\begin{minipage}[b]{0.48\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{ch_facility_location/fig4_2b_soc_scenario2.png}
+  \par\smallskip{\small (b) Scenario 2.}
+\end{minipage}
+\caption{SOC during voyage.}
+\label{fig:single-soc}
+\end{figure}
+
+\subsubsection{Result consideration}
+\label{sec:single-consideration}
+
+The different outcomes from Scenario 1 and Scenario 2 demonstrate the model's core function of balancing competing costs to determine an optimal infrastructure placement. The selection of the single offshore charging station is as expected, dependent on the relative weighting between lost opportunity cost and sailing cost. When battery capacity has a high implicit cost (Scenario 1), the model prioritizes solutions that minimize the required battery size. This is achieved by selecting a charging station near the route's midpoint (\emph{Sørvest A}), thereby reducing the length of the longest segment between charges to 188 nm. This choice is made at the expense of deviating further from the most direct path. In contrast, when sailing distance represents the dominant cost (Scenario 2), the model favors a station placement (\emph{Vestavind E}) that facilitates a shorter overall voyage, accepting the need for a larger battery to cover the longer 224 nm leg as the more economical trade-off. This illustrates the link between optimal infrastructure location and the specific operational cost structure of the vessel.
+
+\subsubsection{Charging strategies}
+\label{sec:charging-strategies}
+
+The model formulation, particularly through energy balance constraints (\ref{eq:energy-lo})--(\ref{eq:energy-hi}), currently allow the optimization model to determine the ideal amount of energy $x_{i}$ to recharge at each node. Under this strategy, the vessel might only partially recharge if it has enough energy for the next leg and completing the charge later is more cost-effective, considering energy prices.
+
+This logic can be exemplified by a basic three-node route with an origin port as node 1, an offshore charging station as node 2, and a destination port as node 3. The amount of energy charged at the offshore station then depends on two factors: the relative energy prices offshore versus in port, and whether the first or last segment of the voyage is the longest. Figure~\ref{fig:charging-strategies} illustrates two scenarios, one where the distance from node 1 to 2 ($D_{12}$) is longest, and another where the distance from node 2 to 3 ($D_{23}$) is longest. Table~\ref{tab:charging-strategies} indicates the amount of energy charged offshore for each scenario assuming that the vessel leaves node 1 fully charged.
+
+\begin{figure}[H]
+\centering
+\begin{minipage}[b]{0.48\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{ch_facility_location/fig4_3a_D23_longest.png}
+  \caption{Scenario where $D_{23}$ is longest.}
+\end{minipage}\hfill
+\begin{minipage}[b]{0.48\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{ch_facility_location/fig4_3b_D12_longest.png}
+  \caption{Scenario where $D_{12}$ is longest.}
+\end{minipage}
+\caption{Charging strategy scenarios.}
+\label{fig:charging-strategies}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Energy charged at offshore charging station assuming leaving node 1 fully charged.}
+\label{tab:charging-strategies}
+\begin{tabular}{@{}l|c|c@{}}
+\toprule
+ & $C^{E}$ lowest in port & $C^{E}$ lowest offshore \\
+\midrule
+Segment $D_{12}$ longest & $E^{C}\cdot D_{23}$ & $E^{C}\cdot D_{12}$ \\
+Segment $D_{23}$ longest & $E^{C}\cdot D_{12}$ & $E^{C}\cdot D_{12}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+While this flexibility allows for finding a potentially lower-cost solution, it increases the model's computational complexity. To assess the value of this flexibility and establish a simpler baseline for comparison, an alternative strategy enforces a mandatory full recharge at every node the vessel visits. This simplification is implemented by replacing the original constraints (\ref{eq:soc-le-q}) with more restrictive constraints, that forces the battery to be fully charged when departing any given node:
+
+\begin{equation}
+b_{i} \;=\; q \qquad \forall\, i\in\mathcal{W}
+\label{eq:forced-full}
+\end{equation}
+
+\subsubsection{Illustrative case with forced full recharge}
+\label{sec:forced-full-case}
+
+To evaluate the impact of the 'forced full recharge' strategy, the two scenarios were re-optimized with constraints (\ref{eq:forced-full}) instead of (\ref{eq:soc-le-q}). Under this revised charging strategy, the optimization model ensures that the vessel begins its journey with fully charged batteries, and recharges the batteries completely at the offshore charging station and at the end of the journey. The results are summarized in Table~\ref{tab:forced-results}, with differences from the flexible charging outcomes noted in parentheses.
+
+\begin{table}[H]
+\centering
+\caption{Forced full recharge results for Scenario 1 and Scenario 2 with differences compared to flexible charging in parentheses.}
+\label{tab:forced-results}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+ & \textbf{Scenario 1} & \textbf{Scenario 2} \\
+\midrule
+Route                            & GBABD $\rightarrow$ NOBGO & GBABD $\rightarrow$ NOBGO \\
+Charging station                 & Sørvest A & Peterhead (Vestavind E) \\
+\textbf{Vessel-specific cost}    & \textbf{7733 ($+30$)} & \textbf{8931 ($+83$)} \\
+\quad -- Sailing cost            & 3448 & 6074 ($-139$) \\
+\quad -- Lost opportunity cost   & 3752 & 2500 ($+263$) \\
+\quad -- Energy cost             & 532 ($+30$) & 357 ($-41$) \\
+\quad -- Time cost               & 0 & 0 \\
+\textbf{Total time in hours}     & \textbf{55.5} & \textbf{50.6 ($-1.2$)} \\
+\quad -- Sailing                 & 23.0 & 20.3 ($-0.4$) \\
+\quad -- Charging in port        & 15.7 ($-3.1$) & 25.0 ($+2.6$) \\
+\quad -- Charging offshore       & 18.8 ($+3.1$) & 5.3 ($-3.4$) \\
+Installed battery capacity $q_{v}$ & 37.5 & 50 ($+5.3$) \\
+Total distance in nm             & 345 & 304 ($-7$) \\
+\% of direct distance            & 114\% & 100\% ($-3\%$) \\
+Longest segment in nm            & 188 & 250 ($+26$) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.62\textwidth]{ch_facility_location/fig4_4_route_forced_scenario2.png}
+\caption{New sailing route for Scenario 2.}
+\label{fig:forced-route}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\begin{minipage}[b]{0.48\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{ch_facility_location/fig4_5a_soc_forced_scenario1.png}
+  \par\smallskip{\small (a) Scenario 1.}
+\end{minipage}\hfill
+\begin{minipage}[b]{0.48\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{ch_facility_location/fig4_5b_soc_forced_scenario2.png}
+  \par\smallskip{\small (b) Scenario 2.}
+\end{minipage}
+\caption{SOC with forced full charge at each node.}
+\label{fig:forced-soc}
+\end{figure}
+
+In Scenario 1, forcing a full recharge did not alter the optimal route, charging station, or required battery capacity. The primary effects were a small increase in charging cost ($+30$) and a longer duration spent charging offshore ($+3.1$ hours), as the vessel now takes on more energy than strictly needed for the next leg. This can be seen when comparing Figure~\ref{fig:single-soc}a to Figure~\ref{fig:forced-soc}a.
+
+However, in Scenario 2, enforcing a full recharge prompted a change in the optimal solution. Instead of Vestavind E, the model selected Peterhead (Figure~\ref{fig:forced-route}). This happens because fully recharging the larger battery required for the Vestavind E route would lead to a significant increase in charging costs for a relatively short final leg. The model, therefore, shifted the optimal station closer to the voyage's origin and increased battery capacity to accommodate a now longer final segment (Figure~\ref{fig:forced-soc}b). This shift demonstrates the model's adaptability to variations in operational charging strategies, a crucial consideration for robust real-world decision-making.
+
+\subsubsection{General model simplifications}
+\label{sec:single-simplifications}
+
+This initial model iteration, while establishing a foundational structure, incorporates several simplifications. It does not account for operational uncertainties such as potential waiting times at charging stations, delays from adverse weather, or energy consumption variations due to sea state or vessel loading. Cost parameters, notably energy prices ($C^{E}_{i}$), are assumed static and uniform within location types (port vs.\ offshore), neglecting real-time volatility or site-specific costs. Energy consumption ($E^{C}$) is also simplified to a constant rate per nautical mile, disregarding factors like speed adjustments, currents, or wind. Lastly, the set of potential charging locations ($\mathcal{W}$) is fixed and predetermined, rather than allowing for dynamic placement.
+
+
+
+
+\subsection{One vessel, one station}
+\label{sec:fl-single}
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[>={Stealth[length=2.2mm]},
+  port/.style={circle,draw,fill=black,minimum size=2.5mm,inner sep=0pt},
+  st/.style={rectangle,draw,fill=red!60,minimum size=3mm,inner sep=0pt}]
+  \node[port,label=below:{$O$}] (O) at (0,0) {};
+  \node[port,label=below:{$D$}] (D) at (7,0) {};
+  \node[st,label=above:{station $w$}] (w) at (3.9,1.4) {};
+  \draw[->,thick] (O) -- node[above left,font=\small]{$a_w$} (w);
+  \draw[->,thick] (w) -- node[above right,font=\small]{$b_w$} (D);
+  \draw[dashed,gray] (O) -- node[below,font=\small]{direct distance $D_{OD}$} (D);
+  \node[align=left,font=\small,anchor=west] at (8.0,0.7)
+  {battery: $q_w=E^C\max(a_w,b_w)$\\ sailed: $a_w+b_w$\\ charged offshore: $E^C\min(a_w,b_w)$};
+\end{tikzpicture}
+\caption{A single vessel charging once at station $w$ between origin $O$ and destination $D$.}
+\label{fig:fl-odw}
+\end{figure}
+
+Consider a vessel sailing from origin $O$ to destination $D$ via station $w$, with legs $a_w=D_{Ow}$ and $b_w=D_{wD}$ as in Figure~\ref{fig:fl-odw}. The vessel consumes $E^C$ energy units per nautical mile, sails at speed $V$ and charges at rate $R^C$. It departs $O$ with a full battery and recharges to full at $D$, ready for the next voyage. Four cost components enter \citep{Agersborg2025}: a distance-dependent sailing cost $C^S$ per nautical mile; the energy cost, with price $C^E_p$ in port and $C^E_w$ offshore; a lost-opportunity cost $C^{LO}$ per unit of installed battery capacity, reflecting the cargo space the batteries occupy; and a time cost $C^T$ per hour of sailing and charging.
+
+The battery capacity must be sufficient for the longest of the two legs, $q_w=E^C\max(a_w,b_w)$. When offshore energy is more expensive than port energy, the vessel charges only what it needs offshore, which is exactly $E^C\min(a_w,b_w)$ in both cases $a_w\ge b_w$ and $a_w<b_w$, and takes the remaining $E^C\max(a_w,b_w)$ in port. Total energy charged equals total consumption $E^C(a_w+b_w)$. Collecting terms, the cost of serving the vessel through station $w$ is
+\begin{equation}
+  c_w \;=\; \kappa\,(a_w+b_w) \;+\; C^{LO}E^C\max(a_w,b_w) \;+\; (C^E_w-C^E_p)\,E^C\min(a_w,b_w),
+  \label{eq:fl-cw}
+\end{equation}
+with
+\begin{equation*}
+  \kappa \;=\; C^S + C^E_p E^C + C^T\left(\frac{1}{V}+\frac{E^C}{R^C}\right),
+\end{equation*}
+the cost per nautical mile sailed, including the port price of the energy consumed and the time spent both sailing and charging.
+
+Equation \eqref{eq:fl-cw} reveals the structure of the problem. The first term is proportional to the total distance and is minimised by a station on or near the direct route; it is a \emph{median-type} term. The second term depends on the longest leg and is minimised by a station at the midpoint of the route; it is a \emph{center-type} (minimax) term. The third term penalises energy bought offshore and pulls the station towards one of the ports, where the shorter leg, and thus the offshore top-up, becomes small. The optimal station balances these three forces, and their relative weights are set by the vessel's cost structure.
+
+\citet{Agersborg2025} analyses the route from Aberdeen to Bergen, whose direct distance is 302\,nm, with $E^C=0.2$, $C^E_w=10$, $C^E_p=5$ and $C^T=0$ in two scenarios. In Scenario~1, cargo space is valuable relative to sailing ($C^{LO}=100$, $C^S=10$), so \eqref{eq:fl-cw} becomes $c_w=11(a_w+b_w)+20\max(a_w,b_w)+\min(a_w,b_w)$, and the center-type term dominates. In Scenario~2, sailing is expensive relative to cargo space ($C^{LO}=50$, $C^S=20$), so $c_w=21(a_w+b_w)+10\max(a_w,b_w)+\min(a_w,b_w)$, and the median-type term dominates. Since there is only one station to choose, the problem is solved by evaluating \eqref{eq:fl-cw} for all 62 candidates and picking the cheapest. Table~\ref{tab:fl-single} shows the best candidates.
+
+\begin{table}[htbp]
+\centering
+\caption{Best single charging stations for the Aberdeen--Bergen route. Legs and distances in nm, battery capacity $q_w$ in energy units, costs in monetary units. Bold entries mark the optimum in each scenario.}
+\label{tab:fl-single}
+\small
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+Station $w$ & $a_w$ & $b_w$ & $a_w+b_w$ & $q_w$ & $c_w$ Scenario 1 & $c_w$ Scenario 2 \\
+\midrule
+S{\o}rvest A      & 188 & 157 & 345 & 37.5 & \textbf{7\,703} & 9\,275 \\
+Vestavind E       & 224 &  87 & 311 & 44.7 & 7\,978 & \textbf{8\,848} \\
+S{\o}rvest B      & 180 & 191 & 371 & 38.2 & 8\,075 & 9\,873 \\
+Culzean           & 129 & 220 & 350 & 44.1 & 8\,382 & 9\,674 \\
+Peterhead         &  54 & 250 & 304 & 50.0 & 8\,393 & 8\,931 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+In Scenario~1 the optimum is S{\o}rvest A, close to the midpoint, which keeps the battery small at the price of a route 14\,\% longer than the direct one. In Scenario~2 the optimum is Vestavind E, close to Bergen, which gives an almost direct route but a battery almost 20\,\% larger. Both costs agree with the full mixed-integer model in the thesis, which is a useful check: the closed-form expression \eqref{eq:fl-cw} captures everything the larger model does for this simple case. Note also S{\o}rvest B, which splits the route most evenly but still needs a slightly larger battery than S{\o}rvest A and adds a longer detour: balanced legs are not the same as a short longest leg.
+
+\subsection{A fleet sharing one station}
+\label{sec:fl-fleet}
+
+Now let a set $\mathcal{V}$ of vessels, each with its own route and cost parameters, share a single station. Computing $c_{vw}$ from \eqref{eq:fl-cw} for every vessel $v$ and candidate $w$, the problem becomes
+\begin{equation}
+  \min_{w\in\mathcal{W}}\ \sum_{v\in\mathcal{V}} c_{vw},
+  \label{eq:fl-1median}
+\end{equation}
+which is a 1-median problem in which each vessel plays the role of a customer and $c_{vw}$ the role of the assignment cost. What looked like a routing problem has become a classical location problem once the cost of each vessel--station combination is computed in advance.
+
+For the four-vessel fleet in \citet{Agersborg2025}, the optimum is S{\o}rvest D, with a total cost of 41\,309, identical to the thesis result. The individual vessels fare very differently. Vessels 2 and 3 pay what they would pay with their own best station, whereas Vessel~1, sailing from Bergen to Aberdeen, pays 9\,889 instead of 7\,703 and sails a route 46\,\% longer than the direct one. A shared station is a compromise, and the compromise falls unevenly. If the station is financed jointly, this raises a question the optimisation model cannot answer: how should the cost be shared among vessels that benefit very differently?
+
+There is one more observation to make. The thesis requires every vessel to call at the station. If Vessel~1 were instead allowed to sail directly with a battery large enough for the whole crossing, its cost would be 9\,376, which is lower than 9\,889. Allowing the ``no station'' option reduces the total to 40\,796 while S{\o}rvest D remains optimal. Whether a do-nothing alternative is included is a modelling choice with real consequences, and it is also exactly what is needed to measure the value of the infrastructure.
+
+\subsection{A fleet with several stations}
+\label{sec:fl-multi}
+
+With several stations, a vessel may charge more than once. Let a \emph{charging plan} $k$ be a feasible sequence of stops for one vessel, for instance ``direct'', ``via S{\o}rvest A'' or ``via S{\o}rvest A, then Dogger Bank A\&B''. For each vessel we enumerate a set of plans $\mathcal{K}_v$, and for each plan we compute its cost $c_{vk}$ and record the set of stations $\mathcal{W}_k$ it uses. The cost of a multi-stop plan follows the same logic as \eqref{eq:fl-cw}: the battery covers the longest leg, and at each offshore stop the vessel charges just enough to reach the next stop. With binary $y_w=1$ if a station is built at $w$, and $z_{vk}=1$ if vessel $v$ uses plan $k$, the problem is
+\begin{align}
+  \min\quad & \sum_{v\in\mathcal{V}}\sum_{k\in\mathcal{K}_v} c_{vk}\, z_{vk} \label{eq:fl-plan-obj}\\
+  \text{s.t.}\quad & \sum_{k\in\mathcal{K}_v} z_{vk} = 1 && \forall v\in\mathcal{V}, \label{eq:fl-plan-one}\\
+  & z_{vk} \le y_w && \forall v\in\mathcal{V},\ k\in\mathcal{K}_v,\ w\in\mathcal{W}_k, \label{eq:fl-plan-open}\\
+  & \sum_{w\in\mathcal{W}} y_w \le S^{\max}, \label{eq:fl-plan-S}\\
+  & z_{vk}\ge 0,\; y_w\in\{0,1\}. \nonumber
+\end{align}
+Compare this with the $p$-median problem \eqref{eq:fl-pmed-obj}--\eqref{eq:fl-pmed-p}. Vessels take the place of customers, plans the place of assignments, \eqref{eq:fl-plan-one} is the assignment constraint, and \eqref{eq:fl-plan-open} is the strong ``open to use'' constraint, now required for every station a plan relies on. This is the path-based formulation of the flow refuelling location model \citep{Kuby2005}. Replacing \eqref{eq:fl-plan-S} by a fixed cost $\sum_w f_w y_w$ in the objective gives the corresponding UFLP.
+
+With 62 candidates and at most two stops, each vessel has $1+62+62\cdot 61=3\,845$ plans, or 15\,380 for the fleet. Most are useless: a two-stop plan that costs more than a one-stop plan through one of its own stations can never be selected, and neither can a plan that costs more than sailing directly. Removing such dominated plans leaves 587 plans, and the model solves in a couple of seconds even with an open-source solver. With $S^{\max}=4$ the optimum builds stations at Dogger Bank A\&B, S{\o}rvest A, S{\o}rlige Nordsj{\o} II and Deutsche Bucht, at a total cost of 32\,952. Vessel~1 now charges once at S{\o}rvest A, its individual optimum, while the three other vessels charge twice. Stations, plans and vessel costs coincide with the thesis results, obtained there with a considerably larger arc-based formulation (Section~\ref{sec:fl-arc}); the reported totals differ by one unit due to rounding.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{ch_facility_location/fl_charging_network.png}
+\caption{Offshore charging for the four-vessel fleet. (a) One shared station at S{\o}rvest D; Vessel~1 sails directly. (b) Four stations. Grey triangles are the candidate wind farms, red squares the selected stations. (c) Minimum total voyage cost as a function of the maximum number of stations, with the saving from each additional station.}
+\label{fig:fl-charging}
+\end{figure}
+
+Solving the model for $S^{\max}=0,1,\dots,6$ traces the \emph{value of the network}, shown in Figure~\ref{fig:fl-charging}(c). The first station reduces the fleet's cost by 9\,607, the second by 4\,297, the third by 1\,633, the fourth by 1\,915, and the fifth and sixth by 731 and 513. Two features deserve attention. First, the optimal configurations are not nested: the best pair of stations (S{\o}rvest C and Dogger Bank C) contains neither the best single station (S{\o}rvest D) nor any of the stations in the best set of four. Second, the marginal value of a station is not monotonically decreasing, as the fourth station is worth more than the third. Both features are consequences of the combinatorial nature of the problem, where the value of a station depends on which other stations it can be combined with. For an infrastructure developer who builds stations one at a time, this means that the first investment should be chosen with the final network in mind, a point we return to when we study decisions under uncertainty.
+
+The curve also indicates how much a station must cost before it is no longer worth building. If the fixed cost per station, expressed per the same accounting period as the voyage costs, exceeds the marginal saving, the station should not be built. The thesis develops this idea into an estimate of the price premium shipowners would be willing to pay for offshore energy \citep{Agersborg2025}.
+
+\subsection{The integrated arc-based formulation}
+\label{sec:fl-arc}
+
+The plan-based formulation is transparent and fast, but it relies on two simplifications: every relevant plan must be enumerated, and the cost of each plan must be computable in advance. Both break down when vessels call at many ports in sequence, when the number of stops per leg grows, or when the charging amount at each stop is itself a decision with a non-trivial trade-off. \citet{Agersborg2025} therefore formulates the problem directly on the network of ports and candidate stations. For a single vessel, let $z_{ij}=1$ if the vessel sails arc $(i,j)$, $b_i$ the battery level when departing node $i$, $x_i$ the energy charged at node $i$ and $q$ the installed capacity. The core of the model is
+\begin{align}
+  \min\quad & \sum_{(i,j)\in\mathcal{A}} C^S D_{ij} z_{ij} + \sum_{i\in\mathcal{N}} C^E_i x_i + C^{LO} q + C^T\Big(\sum_{(i,j)\in\mathcal{A}}\frac{D_{ij}}{V}z_{ij} + \sum_{i\in\mathcal{N}}\frac{x_i}{R^C}\Big) \label{eq:fl-arc-obj}\\
+  \text{s.t.}\quad & \text{flow conservation \eqref{eq:fl-flowcons} with one unit from $O$ to $D$ on the variables } z_{ij}, \nonumber\\
+  & b_j \ge b_i - E^C D_{ij} + x_j - M(1-z_{ij}) && \forall (i,j)\in\mathcal{A}, \label{eq:fl-arc-b1}\\
+  & b_j \le b_i - E^C D_{ij} + x_j + M(1-z_{ij}) && \forall (i,j)\in\mathcal{A}, \label{eq:fl-arc-b2}\\
+  & b_i \ge E^C D_{ij} - M(1-z_{ij}) && \forall (i,j)\in\mathcal{A}, \label{eq:fl-arc-b3}\\
+  & b_i \le q, \quad b_O = b_D = q, \quad q\le Q, \label{eq:fl-arc-q}\\
+  & \sum_{k:(k,w)\in\mathcal{A}} z_{kw} \le y_w \quad \forall w\in\mathcal{W}, \qquad \sum_{w\in\mathcal{W}} y_w \le S^{\max}. \label{eq:fl-arc-y}
+\end{align}
+The flow conservation constraints route the vessel, and constraints \eqref{eq:fl-arc-b1}--\eqref{eq:fl-arc-b2} are the energy balance along the arcs actually sailed: if $z_{ij}=1$, the battery level on departing $j$ equals the level on departing $i$, minus the consumption on the leg, plus what is charged at $j$. If $z_{ij}=0$, the big-$M$ terms deactivate the constraints. Constraint \eqref{eq:fl-arc-b3} ensures that the vessel has enough energy for every leg it sails, and \eqref{eq:fl-arc-y} links the route to the station decisions exactly as in the location models. For a fleet, all routing and energy variables receive a vessel index $v$, while $y_w$ remains common.
+
+Two technical points are worth making. First, $M$ must be derived from the bounds on the quantities in the constraints, for example $M\ge Q+E^C\max_{(i,j)}D_{ij}$, and should be no larger than necessary, for the reasons discussed in Section~\ref{sec:fl-strength}. A value tied to the number of nodes, which is natural in the ordering constraints below, does not in general bound energy terms. Second, when a vessel may visit several stations, the routing variables can form \emph{subtours}, disconnected cycles among station nodes that satisfy flow conservation without being part of the voyage. These must be eliminated, for instance with the Miller--Tucker--Zemlin ordering constraints \citep{Miller1960} or the Dantzig--Fulkerson--Johnson cut-set constraints \citep{Dantzig1954}. Subtours and their elimination are a central topic in routing, and we return to them in a later chapter.
+
+The arc-based model is a genuine \emph{location--routing--sizing} model: it decides where to build infrastructure, how each vessel sails, how much it charges where, and how large its battery must be, all at once. The plan-based model solves the same problem for the instances in this chapter because the routing and charging sub-problem of each vessel is simple enough to be solved in advance by enumeration. That two very different formulations yield the same optimum is also a valuable check on both implementations.
+
+\subsection{What the model leaves out}
+\label{sec:fl-limits}
+
+The charging models in this section minimise the operating cost of the fleet and treat the infrastructure as free up to the limit $S^{\max}$. In reality, an offshore station requires substantial investment, and it will usually be built and operated by someone other than the shipowners who use it. A complete analysis therefore has at least two decision makers: an infrastructure provider who chooses locations and prices to recover its investment, and shipowners who choose routes, charging plans and battery sizes in response. Such leader--follower structures lead to bilevel optimisation problems, which lie beyond the scope of this course, but the value-of-network curve in Figure~\ref{fig:fl-charging}(c) is a first step towards them.
+
+Other simplifications are shared with the bunkering hub example. Stations and hubs are assumed to have unlimited power or throughput, so queuing at popular stations is ignored. Energy consumption is assumed constant per nautical mile, independent of weather, sea state and loading. And all parameters, from energy prices and freight rates to the fleet that will actually adopt battery-electric propulsion, are treated as known. For infrastructure with a lifetime of decades, that last assumption is the most problematic, and handling it properly is the subject of the chapter on decisions under uncertainty.
+
+
+% ---------------------------------------------------------------------
+\section{Summary and outlook}
+\label{sec:fl-summary}
+
+Facility location problems are network design problems in which the decision is which nodes to establish. The classical models differ mainly in their objective. Covering models express service standards, median models express efficiency, center models express worst-case service, and fixed-charge models let the number of facilities follow from the trade-off between investment and operating cost. As the bunkering hub example showed, the choice of objective can change the solution completely, and making that choice consciously is part of the design task.
+
+On the modelling side, three lessons carry over to integer programming in general. Formulations with the same integer solutions can differ greatly in the strength of their LP relaxation, and the disaggregated ``open to use'' constraint $x_{ij}\le y_i$ is the standard example. A complex problem can sometimes be turned into a classical one by computing assignment costs in advance, as we did when each vessel's charging plan was reduced to a cost and a set of required stations. And the optimal configurations of combinatorial problems need not be nested or show diminishing returns, which has real consequences for how infrastructure is rolled out over time.
+
+In the next chapter we take the network as given and ask how to use it efficiently. The shortest path problem finds the best route through a network, for instance the sailing route between two ports via a set of waypoints, and the maximum flow problem determines how much a network can carry, for instance the throughput capacity of a port or a supply chain. Both are network flow problems in the sense of Section~\ref{sec:fl-networks}, and both have the remarkable property that their LP relaxations have integer optimal solutions, so no branching is needed at all.

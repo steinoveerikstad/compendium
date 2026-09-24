@@ -1,0 +1,38 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build compendium PDF",
+      "type": "shell",
+      "command": "/usr/local/texlive/2026/bin/universal-darwin/latexmk",
+      "args": [
+        "-pdf",
+        "-pdflatex=/usr/local/texlive/2026/bin/universal-darwin/pdflatex %O %S",
+        "-f",
+        "-outdir=build",
+        "-interaction=nonstopmode",
+        "-synctex=1",
+        "main.tex"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": {
+        "$schema": "https://raw.githubusercontent.com/microsoft/terminallanguageclient/main/terminallanguageclient/schemas/tasks.schema.json",
+        "owner": "latex",
+        "severity": "error",
+        "pattern": {
+          "regexp": "^(.*):(\\d+):(\\d+):\\s*(.*)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "message": 4
+        }
+      }
+    }
+  ]
+}

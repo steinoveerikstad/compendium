@@ -1,0 +1,50 @@
+% main.tex  —  TMR4115 Design Methods Compendium
+% Build:  latexmk -pdf -outdir=build main.tex
+% =====================================================================
+\documentclass[11pt,a4paper]{book}
+
+\usepackage[T1]{fontenc}          % proper hyphenation of accented words
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb}      % maths
+\usepackage{booktabs}             % \toprule \midrule \bottomrule
+\usepackage{graphicx}             % \includegraphics
+\usepackage{float}                % [H] float placement
+\usepackage{tikz}                 % diagrams drawn in the text
+\usetikzlibrary{arrows.meta,positioning}
+\usepackage{listings}             % Python code listings
+\usepackage[authoryear,round]{natbib}
+\usepackage[hidelinks]{hyperref}  % load last
+
+% Figures live in fig/<chapter>/, referenced as {ch_name/file.png}
+\graphicspath{{fig/}}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  frame=single,
+  columns=fullflexible,
+  keywordstyle=\color{blue!60!black},
+  commentstyle=\color{gray}
+}
+
+% =====================================================================
+\begin{document}
+
+\frontmatter
+\tableofcontents
+
+\mainmatter
+
+% \include{ch_ship_size_speed}
+% \include{ch_configuration}
+\include{ch_lp_types}
+\include{ch_integer_programming}
+% \include{ch_nlp}
+% \include{ch_uncertainty}
+\include{ch_facility_location}
+
+\backmatter
+\bibliographystyle{plainnat}
+\bibliography{compendium}
+
+\end{document}
