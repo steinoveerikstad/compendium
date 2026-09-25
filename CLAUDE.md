@@ -16,6 +16,7 @@ with a basic calculus and linear algebra background.
 compendium/
 ├── main.tex                    ← the only file with a preamble
 ├── compendium.bib              ← single bibliography for all chapters
+├── README.md                   ← how to build and how to release
 ├── CLAUDE.md                   ← this file
 ├── NOTES.md                    ← running log, one entry per session
 ├── CHANGELOG.md                ← what changed in each released version
@@ -175,25 +176,20 @@ Both are printed on the compendium title page and in the header of every
 lecture note, so any printed copy identifies its edition. `release.sh` rewrites
 them — do not bump them by hand.
 
-**To cut a release:** write the `## [x.y.z]` section in `CHANGELOG.md` first,
-commit everything, then
+**The release procedure is in `README.md`**, which is the human-facing entry
+point — do not restate the steps here, and update them there. In short: write
+the CHANGELOG section, commit, `./release.sh <version>`, attach the PDF to the
+GitHub release. Claude does not cut releases unless asked.
 
-```
-./release.sh 0.5.0
-```
-
-which stamps the version, rebuilds, refuses to continue on a LaTeX error or an
-undefined reference, commits, tags `v0.5.0` and pushes both. It then prints the
-link for attaching `build/TMR4115-compendium-v0.5.0.pdf` to the GitHub release,
-which is the one manual step — `gh` is not installed on this machine.
-
-**Three files, three jobs.** Keep them apart:
+**Five files, five jobs.** Keep them apart:
 
 | File | Holds |
 |------|-------|
+| `README.md` | how to build and how to release — written for a person, not for Claude |
 | `CHANGELOG.md` | what changed in each *released version*, user-facing |
 | `TODO.md` | what is still to do; items move to CHANGELOG when they ship |
 | `NOTES.md` | the per-session narrative — what was tried, what was decided and why |
+| `CLAUDE.md` | this file: conventions, structure, policy |
 
 The built PDF is never committed; `build/` stays gitignored and the PDF is
 distributed as a GitHub release asset.

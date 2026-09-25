@@ -17,7 +17,10 @@ the built `main.pdf`. Run `./release.sh <version>` to cut one.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+- `README.md`: how to build both modes, and the four-step release procedure.
+  It is the human-facing entry point; `CLAUDE.md` now points at it rather than
+  restating the steps
 
 ## [0.4.0] — 2026-09-25
 
