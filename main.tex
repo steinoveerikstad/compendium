@@ -1,8 +1,40 @@
-% main.tex  —  TMR4115 Design Methods Compendium
-% Build:  latexmk -pdf -outdir=build main.tex
+% main.tex  —  TMR4115 Design Methods
 % =====================================================================
-\documentclass[11pt,a4paper]{book}
+% MODE SWITCH
+%
+%   \CompendiumMode = 1   full compendium: book class, title page,
+%                         table of contents, numbered chapters,
+%                         every \include'd chapter
+%
+%   \CompendiumMode = 0   one chapter on its own, as a lecture note:
+%                         article class, plain title + date, no TOC,
+%                         sections numbered 1, 2, 3 instead of 3.1, 3.2
+%
+% In note mode \NoteChapter names the single chapter file to typeset,
+% without the .tex extension.
+%
+% Build:
+%   compendium     latexmk -pdf -outdir=build main.tex
+%   lecture note   set the two switches below and build as usual, or
+%                  leave them alone and override on the command line:
+%     latexmk -pdf -outdir=build -jobname=note_lp \
+%       -usepretex='\def\CompendiumMode{0}\def\NoteChapter{ch_lp_types}' main.tex
+% =====================================================================
+\providecommand{\CompendiumMode}{1}
+\providecommand{\NoteChapter}{ch_facility_location}
 
+% Version of the compendium, shown on the title page and on every lecture
+% note. Bumped by release.sh, which also tags the commit; see CHANGELOG.md.
+\providecommand{\CompendiumVersion}{0.4.0}
+\providecommand{\CompendiumDate}{25 September 2026}
+
+\ifnum\CompendiumMode=1
+  \documentclass[11pt,a4paper]{book}
+\else
+  \documentclass[11pt,a4paper]{article}
+\fi
+
+% ---- shared preamble ------------------------------------------------
 \usepackage[T1]{fontenc}          % proper hyphenation of accented words
 \usepackage{lmodern}
 \usepackage{amsmath,amssymb}      % maths
@@ -27,23 +59,46 @@
   commentstyle=\color{gray}
 }
 
+\author{Stein Ove Erikstad\\Department of Marine Technology, NTNU}
+
+% ---- mode-specific setup --------------------------------------------
+\ifnum\CompendiumMode=1
+  \title{\vspace*{3cm}\Huge Design Methods\\[0.6em]
+         \large TMR4115 --- Compendium\vspace{1cm}}
+  \date{Version \CompendiumVersion\\[0.3em]\CompendiumDate}
+\else
+  % article has no \chapter, so the chapter heading becomes the note title
+  \newcommand{\chapter}[1]{\title{#1}\maketitle}
+  \date{\small TMR4115 compendium, version \CompendiumVersion\ ---
+        \CompendiumDate}
+\fi
+
 % =====================================================================
 \begin{document}
 
-\frontmatter
-\tableofcontents
+\ifnum\CompendiumMode=1
 
-\mainmatter
+  \frontmatter
+  \maketitle
+  \tableofcontents
 
-% \include{ch_ship_size_speed}
-% \include{ch_configuration}
-\include{ch_lp_types}
-\include{ch_integer_programming}
-% \include{ch_nlp}
-% \include{ch_uncertainty}
-\include{ch_facility_location}
+  \mainmatter
+  % \include{ch_ship_size_speed}
+  % \include{ch_configuration}
+  \include{ch_lp_types}
+  \include{ch_integer_programming}
+  % \include{ch_nlp}
+  % \include{ch_uncertainty}
+  \include{ch_facility_location}
 
-\backmatter
+  \backmatter
+
+\else
+
+  \input{\NoteChapter}
+
+\fi
+
 \bibliographystyle{plainnat}
 \bibliography{compendium}
 

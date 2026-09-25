@@ -2,6 +2,101 @@
 
 Most recent entry at the top.
 
+## 2026-09-25 — versioning, changelog, TODO, release process
+
+Goal: get the project onto a versioning scheme with tagged releases, a record of
+what changed per version, and a TODO list separate from this log.
+
+**Found on starting:** the repo was already a git repository with one commit
+("first commit", f597b0f) and an `origin` at
+`https://github.com/steinoveerikstad/compendium` (public), already in sync — so
+nothing needed connecting. Uncommitted in the working tree was a 125-line
+deletion in `ch_facility_location.tex`, made outside the session: the
+compendium's own offshore-charging treatment (`One vessel, one station`,
+`A fleet sharing one station`, `A fleet with several stations`,
+`The integrated arc-based formulation`) removed in favour of the Agersborg
+material. This resolved the duplication item carried since 09-24, but left one
+dangling reference and took the build to 64 pages with 1 undefined reference.
+
+**Done:**
+- Restored the `fl_charging_network.png` figure (`fig:fl-charging`) with a short
+  lead-in paragraph, placed just before `What the model leaves out`. The other
+  four deleted subsections stay deleted, per decision in session
+- `\CompendiumVersion` and `\CompendiumDate` in `main.tex`, printed on the
+  compendium title page and in every lecture note header
+- `CHANGELOG.md`, semver-lite: MAJOR = taught edition, MINOR = chapter added or
+  rewritten, PATCH = fixes. Seeded with 0.4.0 and a retroactive 0.3.0 for the
+  first commit
+- `TODO.md`, seeded from the open items that had accumulated here
+- `release.sh <version>`: checks branch, clean tree, unused tag and a CHANGELOG
+  section; stamps the version; rebuilds; aborts on any LaTeX error or undefined
+  reference; commits, tags, pushes; then prints the link for attaching the PDF
+  to the GitHub release
+- CLAUDE.md: new "Version control and releases" section, and a note on which of
+  CHANGELOG / TODO / NOTES holds what
+
+**Decisions:** PDF goes out as a GitHub release asset rather than committed, so
+`build/` stays gitignored. Version numbering starts at 0.4.0, reaching 1.0.0 at
+the first taught delivery.
+
+**Verified:** compendium builds clean, 64 pages, no errors, no undefined
+references; all three lecture notes build clean. Title page and note header
+checked in the rendered PDFs. `release.sh` syntax-checked with `bash -n`; its
+end-to-end path is exercised by the first real release.
+
+**Open items:** now tracked in TODO.md rather than here.
+
+---
+
+## 2026-09-24 (later) — two build modes in main.tex
+
+Goal: build a single chapter as a standalone lecture note without giving chapter
+files their own preamble, while keeping the full compendium build unchanged.
+
+**Done:**
+- Added two switches at the top of `main.tex`:
+  `\providecommand{\CompendiumMode}{1}` and `\providecommand{\NoteChapter}{...}`.
+  `\providecommand` rather than `\newcommand` so `latexmk -usepretex` can override
+  them without editing the file
+- Mode 1 (compendium): `book`, title page, TOC, all `\include`s, unchanged content
+- Mode 0 (lecture note): `article`, `\input` of one chapter, `\chapter` redefined
+  to `\title{#1}\maketitle`, so the chapter heading becomes the note title and
+  sections number 1, 1.1 instead of 3.1, 3.1.1. Chapter files are untouched
+- Conditional `\documentclass` inside `\ifnum ... \else ... \fi`; the flags are
+  set before it, which is legal since `\providecommand` comes from the format
+- Added a title page to the compendium (there was none): title, author, date.
+  Author line is `Stein Ove Erikstad \\ Department of Marine Technology, NTNU`
+- Removed stale `build/chapter_shell.*` and `build/texput.*` artefacts left over
+  from the deleted `chapter_shell.tex`
+- CLAUDE.md: new "Two build modes" section under Building; the "One preamble" rule
+  now points there instead of saying to comment out `\include` lines
+
+**Verified:** all four builds exit 0 with no errors. Compendium 70 pages (68 plus
+the new title page), no undefined references or citations. Lecture notes:
+ch_lp_types 11 pp, ch_integer_programming 21 pp, ch_facility_location 30 pp.
+Title pages of both modes checked visually in the rendered PDFs.
+
+- Fixed the 3 cross-chapter references in `ch_integer_programming.tex`, which were
+  the only ones in the compendium and printed as `??` in note mode. Each now names
+  the idea instead of a section number, so it reads the same in both modes:
+  `Section~\ref{sec:lp-assumptions} flagged divisibility as one of four key
+  assumptions` became `Divisibility was one of the four defining assumptions of a
+  linear program`; `the formulation discipline of
+  Section~\ref{sec:structured-formulation}` became `the structured formulation
+  discipline developed for linear programs`; `the cargo-mix problem in
+  Section~\ref{sec:cargo-mix}` became `the earlier cargo-mix problem`. Convention
+  recorded in CLAUDE.md
+
+**Open items (in addition to those below, which all still stand):**
+- `ch_integer_programming.tex` opens with "The previous chapter treated every
+  decision variable as continuous", which is prose, not a `\ref`, so it builds
+  clean but still dangles when the chapter is read as a standalone note. Same for
+  any other "the previous chapter" phrasing. Not changed — the author's call
+- VS Code may still show a tab for the deleted `chapter_shell.tex`; closing it
+  avoids accidentally re-saving the file
+
+---
+
 ## 2026-09-24 — project structure and preamble cleanup
 
 Goal: simplify the folder layout, cut LaTeX dependencies, put figures in

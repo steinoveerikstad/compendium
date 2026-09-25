@@ -17,7 +17,10 @@ compendium/
 ├── main.tex                    ← the only file with a preamble
 ├── compendium.bib              ← single bibliography for all chapters
 ├── CLAUDE.md                   ← this file
-├── NOTES.md                    ← running log of decisions and to-dos
+├── NOTES.md                    ← running log, one entry per session
+├── CHANGELOG.md                ← what changed in each released version
+├── TODO.md                     ← working list of what is still to do
+├── release.sh                  ← bump version, build, commit, tag, push
 │
 ├── ch_ship_size_speed.tex      ← stub
 ├── ch_configuration.tex        ← stub
@@ -41,8 +44,8 @@ compendium/
 **One preamble.** `main.tex` is the only file that may contain `\documentclass`
 or `\usepackage`. Chapter files start at `\chapter{}` and contain nothing above it.
 Never add a preamble, a compile guard, or a standalone-document wrapper to a
-chapter file — if a chapter needs to be previewed alone, comment out the other
-`\include` lines in `main.tex` instead.
+chapter file — `main.tex` can already build a single chapter on its own, see
+**Two build modes** below.
 
 **Few packages.** The full list, and the whole preamble policy:
 
@@ -91,7 +94,7 @@ and tables use `fig:` and `tab:` with the same chapter prefix.
 | ch_uncertainty.tex | stub | no |
 | ch_facility_location.tex | written | yes (ch. 3) |
 
-Current build: 68 pages, no errors, no undefined references or citations.
+Current build: 70 pages, no errors, no undefined references or citations.
 
 ## Code listings
 
@@ -101,9 +104,47 @@ Data files live in `code/` alongside the script.
 
 ## Building
 
+### Two build modes
+
+`main.tex` builds either the whole compendium or one chapter as a standalone
+lecture note. Two switches at the top of the file control this:
+
+```latex
+\providecommand{\CompendiumMode}{1}          % 1 = compendium, 0 = lecture note
+\providecommand{\NoteChapter}{ch_facility_location}   % which chapter, in note mode
 ```
+
+| | `\CompendiumMode` = 1 | `\CompendiumMode` = 0 |
+|---|---|---|
+| class | `book` | `article` |
+| front | title page + table of contents | title, author, date only |
+| chapters | all `\include`d ones | just `\NoteChapter`, via `\input` |
+| headings | `\chapter` numbered, sections 3.1, 3.2 | `\chapter` becomes the note title, sections 1, 2 |
+
+The switch is implemented by a conditional `\documentclass` and one conditional
+block in the preamble and in the body. Chapter files need no change: `\chapter`
+is redefined in note mode so the same file works in both.
+
+```
+# whole compendium
 latexmk -pdf -outdir=build -interaction=nonstopmode main.tex
+
+# one chapter as a lecture note, without editing main.tex
+latexmk -pdf -outdir=build -jobname=note_lp -interaction=nonstopmode \
+  -usepretex='\def\CompendiumMode{0}\def\NoteChapter{ch_lp_types}' main.tex
 ```
+
+Editing the two `\providecommand` values instead works the same way (that is what
+`\providecommand` is for — the command line wins if set), but the output is then
+still `build/main.pdf`, so pass `-jobname` when a note should not overwrite the
+compendium PDF.
+
+Note mode leaves cross-chapter `\ref`s undefined, since the other chapters are
+not typeset. There are currently none: when a chapter needs to point at material
+in another one, name the idea rather than the section number ("the structured
+formulation discipline developed for linear programs", not
+"Section~\ref{sec:structured-formulation}"). That reads correctly in both modes.
+Keep `\ref` for targets inside the same chapter file.
 
 Two TeX installations are present on this machine and the project builds on both:
 
@@ -116,10 +157,53 @@ Two TeX installations are present on this machine and the project builds on both
 If a package turns out to be missing, prefer removing the dependency over
 installing it.
 
+## Version control and releases
+
+The project is a git repository, on GitHub at
+`https://github.com/steinoveerikstad/compendium` (public). Branch `main`.
+
+**Versioning is semver-lite.** MAJOR = a taught edition of the course
+(`1.0.0` = first delivery), MINOR = a chapter added or substantially rewritten,
+PATCH = fixes, typos and layout passes. The current version lives in `main.tex`:
+
+```latex
+\providecommand{\CompendiumVersion}{0.4.0}
+\providecommand{\CompendiumDate}{25 September 2026}
+```
+
+Both are printed on the compendium title page and in the header of every
+lecture note, so any printed copy identifies its edition. `release.sh` rewrites
+them — do not bump them by hand.
+
+**To cut a release:** write the `## [x.y.z]` section in `CHANGELOG.md` first,
+commit everything, then
+
+```
+./release.sh 0.5.0
+```
+
+which stamps the version, rebuilds, refuses to continue on a LaTeX error or an
+undefined reference, commits, tags `v0.5.0` and pushes both. It then prints the
+link for attaching `build/TMR4115-compendium-v0.5.0.pdf` to the GitHub release,
+which is the one manual step — `gh` is not installed on this machine.
+
+**Three files, three jobs.** Keep them apart:
+
+| File | Holds |
+|------|-------|
+| `CHANGELOG.md` | what changed in each *released version*, user-facing |
+| `TODO.md` | what is still to do; items move to CHANGELOG when they ship |
+| `NOTES.md` | the per-session narrative — what was tried, what was decided and why |
+
+The built PDF is never committed; `build/` stays gitignored and the PDF is
+distributed as a GitHub release asset.
+
 ## What Claude should do in each session
 
 1. Read NOTES.md first for carry-over from the last session.
 2. Work in the chapter files. Touch `main.tex` only to add an `\include` line.
 3. Verify numbers and equations before writing them. Build before finishing:
    no LaTeX errors, no undefined references.
-4. Update NOTES.md at the end with what was done and what is next.
+4. Update NOTES.md at the end with what was done and what is next, move any
+   finished items out of TODO.md, and add anything user-facing to the
+   `[Unreleased]` section of CHANGELOG.md.

@@ -6,8 +6,8 @@
 
 The previous chapter treated every decision variable as continuous, such as a
 cargo quantity, or a number of cabins. These could take any non-negative real
-value. Section~\ref{sec:lp-assumptions} flagged \emph{divisibility} as one
-of four key assumptions, and we saw in the cabin
+value. \emph{Divisibility} was one of the four defining assumptions of a
+linear program, and we saw in the cabin
 problem that an integer-valued optimum can appear in a continuous LP
 purely by coincidence (and thus, no integer-specific constraints are needed). 
 However, we cannot generally assume this for any arbitrary discrete design problem. 
@@ -46,10 +46,9 @@ variable is restricted to take only integer values --- or, in the common
 special case of a yes/no decision, only the values $0$ and $1$ --- the
 resulting problem is an \emph{integer program}. Everything else about the
 model is unchanged: objective and constraints remain linear in the
-decision variables, so the formulation discipline of
-Section~\ref{sec:structured-formulation} (sets, parameters, variables,
-model) applies without modification. Only the domain of the variables
-changes.
+decision variables, so the structured formulation discipline developed for
+linear programs (sets, parameters, variables, model) applies without
+modification. Only the domain of the variables changes.
 
 \subsection{Pure, mixed, and binary integer programs}
 \label{sec:ip-types}
@@ -197,8 +196,8 @@ A simple and easy-to-understand illustration of this problem is yourself packing
 \end{align}
 
 Every constraint here has exactly the same anatomy as the deadweight and
-volume constraints of the cargo-mix problem in
-Section~\ref{sec:cargo-mix}; only the domain of $x_k$ has changed.
+volume constraints of the earlier cargo-mix problem; only the domain of
+$x_k$ has changed.
 
 \subsection{A retrofit-selection example, and why greedy fails}
 
